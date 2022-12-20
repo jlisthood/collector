@@ -76,17 +76,26 @@ func findRdsInstanceByHostAndPort(host string, port int64, svc *rds.RDS) (*rds.D
 		MaxRecords: aws.Int64(100),
 	}
 
-	resp, err := svc.DescribeDBInstances(params)
+	var instanceFoundByHostAndPort *rds.DBInstance
+	err := svc.DescribeDBInstancesPages(params,
+		func(page *rds.DescribeDBInstancesOutput, lastPage bool) bool {
+			for _, instance := range page.DBInstances {
+				instanceHost := instance.Endpoint.Address
+				instancePort := instance.Endpoint.Port
+				if instanceHost != nil && instancePort != nil && *instanceHost == host && *instancePort == port {
+					instanceFoundByHostAndPort = instance
+					return true
+				}
+			}
+			return false
+		})
+
 	if err != nil {
 		return nil, err
 	}
 
-	for _, instance := range resp.DBInstances {
-		instanceHost := instance.Endpoint.Address
-		instancePort := instance.Endpoint.Port
-		if instanceHost != nil && instancePort != nil && *instanceHost == host && *instancePort == port {
-			return instance, nil
-		}
+	if instanceFoundByHostAndPort != nil {
+		return instanceFoundByHostAndPort, nil
 	}
 
 	return nil, fmt.Errorf("Failed to find RDS instance using endpoint-based search for host \"%s\" and port %d", host, port)
